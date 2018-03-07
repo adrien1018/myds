@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <functional>
 
 #ifdef DEBUG
 #include <cstdio>
@@ -57,11 +58,14 @@ public:
   };
 
   // constructors
-  explicit Matrix(size_t row = 1, size_t col = 1) : row_(row), col_(col) {
-    mat_ = new T[row_ * col_]();
-    dbgln("onstruct");
+  Matrix() : row_(0), col_(0), mat_(nullptr) {}
+  Matrix(size_t row, size_t col, const T& val = 0)
+      : row_(row), col_(col) {
+    mat_ = new T[row_ * col_];
+    std::fill_n(mat_, row_ * col_, val);
+    dbgln("construct");
   }
-  Matrix(size_t row, size_t col, MatrixCreationType type)
+  explicit Matrix(size_t row, size_t col, MatrixCreationType type)
       : row_(row), col_(col) {
     switch (type) {
       case Empty: {
@@ -88,9 +92,17 @@ public:
     }
     dbgln("construct");
   }
+  template <class U, class = std::enable_if<
+      std::is_assignable<T&, typename std::result_of<U()>::type>::value>>
+  Matrix(size_t row, size_t col, U gen)
+      : row_(row), col_(col) {
+    mat_ = new T[row_ * col_];
+    std::generate_n(mat_, row_ * col_, gen);
+  }
+
   Matrix(const Matrix& rhs) : row_(rhs.row_), col_(rhs.col_) {
     mat_ = new T[row_ * col_];
-    std::copy(rhs.mat_, rhs.mat_ + row_ * col_, mat_);
+    std::copy_n(rhs.mat_, row_ * col_, mat_);
     dbgln("copy construct");
   }
   Matrix(Matrix&& rhs) : row_(rhs.row_), col_(rhs.col_), mat_(rhs.mat_) {
@@ -110,7 +122,7 @@ public:
       }
       row_ = rhs.row_;
       col_ = rhs.col_;
-      std::copy(rhs.mat_, rhs.mat_ + row_ * col_, mat_);
+      std::copy_n(rhs.mat_, row_ * col_, mat_);
     }
     dbgln("copy assign");
     return *this;
@@ -138,6 +150,25 @@ public:
   // size
   size_t row() const { return row_; }
   size_t col() const { return col_; }
+
+  // reshape
+  void reshape(size_t row, size_t col, const T& val = 0) {
+    T* tmp = new T[row * col];
+    size_t sz = std::min(row * col, row_ * col_);
+    std::copy_n(mat_, sz, tmp);
+    std::fill(tmp + sz, tmp + row * col, val);
+    delete[] mat_;
+    row_ = row;
+    col_ = col;
+    mat_ = tmp;
+  }
+  void resize(size_t row, size_t col, const T& val = 0) {
+    delete[] mat_;
+    mat_ = new T[row * col];
+    std::fill_n(mat_, row * col, val);
+    row_ = row;
+    col_ = col;
+  }
 
   // matrix add/subtract
   const Matrix& operator+=(const Matrix& rhs) {
