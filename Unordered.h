@@ -25,10 +25,9 @@ public:
     T val;
     Node* nxt;
   };
-  struct Iter {
+  class Iter {
     Node **bucket, **end;
     Node* node;
-    Iter() : bucket(nullptr), end(nullptr), node(nullptr) {}
     Iter(Node** a, Node** b, Node* c) : bucket(a), end(b), node(c) {}
 
     void Next() {
@@ -43,18 +42,24 @@ public:
         }
       } while (bucket != end);
     }
+  public:
+    Iter() : bucket(nullptr), end(nullptr), node(nullptr) {}
+
+    const Iter& operator++() { Next(); return *this; }
+    Iter operator++(int) { Iter prv(*this); Next(); return prv; }
     bool operator==(const Iter& a) const { return node == a.node; }
     bool operator!=(const Iter& a) const { return node != a.node; }
     T& operator*() { return node->val; }
-    T* GetPointer() { return &(node->val); }
+    T* operator->() { return &(node->val); }
+
+    friend class ConstIter;
+    friend class UnorderedBase;
   };
   struct ConstIter {
     Node* const* bucket;
     Node* const* end;
     const Node* node;
-    ConstIter() : bucket(nullptr), end(nullptr), node(nullptr) {}
     ConstIter(const Node** a, const Node** b, const Node* c) : bucket(a), end(b), node(c) {}
-    ConstIter(const Iter& a) : bucket(a.bucket), end(a.end), node(a.node) {}
 
     void Next() {
       if (bucket == end) return;
@@ -68,10 +73,18 @@ public:
         }
       } while (bucket != end);
     }
+  public:
+    ConstIter() : bucket(nullptr), end(nullptr), node(nullptr) {}
+    ConstIter(const Iter& a) : bucket(a.bucket), end(a.end), node(a.node) {}
+
+    const ConstIter& operator++() { Next(); return *this; }
+    ConstIter operator++(int) { ConstIter prv(*this); Next(); return prv; }
     bool operator==(const ConstIter& a) const { return node == a.node; }
     bool operator!=(const ConstIter& a) const { return node != a.node; }
     const T& operator*() const { return node->val; }
-    const T* GetPointer() const { return &(node->val); }
+    const T* operator->() const { return &(node->val); }
+
+    friend class UnorderedBase;
   };
 private:
   Node** buckets_;
@@ -310,6 +323,7 @@ public:
     if (!size_) return IterEnd();
     Iter it;
     it.bucket = buckets_;
+    it.end = buckets_end_;
     while (!*(it.bucket)) it.bucket++;
     it.node = *it.bucket;
     return it;
@@ -341,36 +355,14 @@ private:
   base_type base_;
   float alpha_;
 
-  template <class iter_type> class IteratorBase {
-  private:
-    iter_type it;
-    IteratorBase(iter_type a) : it(a) {}
-  public:
-    friend class UnorderedMap;
-    IteratorBase() {}
-    bool operator==(const IteratorBase& a) const { return it == a.it; }
-    bool operator!=(const IteratorBase& a) const { return it != a.it; }
-    auto operator*() { return *it; }
-    auto operator->() { return it.GetPointer(); }
-    const iter_type& operator++() {
-      it.Next();
-      return *this;
-    }
-    iter_type operator++(int) {
-      iter_type prv = it;
-      it.Next();
-      return prv;
-    }
-  };
-
   void CheckRehash() {
     if ((float)base_.size() / base_.BucketCount() > alpha_) {
       base_.Rehash(base_.BucketCount() * 2);
     }
   }
 public:
-  typedef IteratorBase<typename base_type::Iter> iterator;
-  typedef IteratorBase<typename base_type::ConstIter> const_iterator;
+  typedef typename base_type::Iter iterator;
+  typedef typename base_type::ConstIter const_iterator;
 
   explicit UnorderedMap(size_type bucket = 4, const Hash& hf = Hash(), const Pred& eq = Pred(),
       const Cls& cs = Cls()) : base_(2l << std::__lg(bucket - 1), hf, eq, cs), alpha_(1.0) {}
@@ -409,7 +401,7 @@ public:
   T& operator[](Key&& val) {
     CheckRehash();
     auto it = base_.InsertIf(std::make_pair(std::move(val), T()));
-    return it.first.GetPointer()->second;
+    return it.first->second;
   }
 
   const_iterator find(const Key& val) const {
