@@ -58,11 +58,10 @@ public:
     friend class ConstIter;
     friend class UnorderedBase;
   };
-  struct ConstIter {
-    Node* const* bucket;
-    Node* const* end;
+  class ConstIter {
+    Node **bucket, **end;
     const Node* node;
-    ConstIter(const Node** a, const Node** b, const Node* c) : bucket(a), end(b), node(c) {}
+    ConstIter(Node** a, Node** b, const Node* c) : bucket(a), end(b), node(c) {}
 
     void Next() {
       if (bucket == end) return;
@@ -109,6 +108,14 @@ private:
     }
     return nullptr;
   }
+  template<class U> Node** FindValPrev(Node** bucket, const U& val) const {
+    for (Node* nd = *bucket; nd; nd = nd->nxt) {
+      if (pred_(keyget_(nd->val), val)) return bucket;
+      bucket = &nd->nxt;
+    }
+    return nullptr;
+  }
+
   Node** GetBucket(const T& val, Identity<T>) {
     return buckets_ + classifier_(hasher_(keyget_(val)), buckets_end_ - buckets_);
   }
@@ -120,6 +127,17 @@ private:
       if (pred_(keyget_(nd->val), keyget_(val))) return nd;
     }
     return nullptr;
+  }
+  Node** FindValPrev(Node** bucket, const T& val) const {
+    for (Node* nd = *bucket; nd; nd = nd->nxt) {
+      if (pred_(keyget_(nd->val), keyget_(val))) return bucket;
+      bucket = &nd->nxt;
+    }
+    return nullptr;
+  }
+  Node** FindNodePrev(Node** bucket, const Node* nd) const {
+    for (Node* it = *bucket; it != nd; it = it->nxt) bucket = &it->nxt;
+    return bucket;
   }
 
   template <class U> Node** GetBucket(const U& val) { return GetBucket(val, Identity<U>()); }
@@ -140,7 +158,6 @@ private:
   }
 
   Iter MakeIter(Node** a, Node* b) { return (Iter){a, buckets_end_, b}; }
-  ConstIter MakeConstIter(Node** a, Node* b) { return (ConstIter){a, buckets_end_, b}; }
 public:
   UnorderedBase(size_t bucket = 1, const Hash& hf = Hash(), const Pred& eq = Pred(),
       const Cls& cs = Cls()) : size_(0), hasher_(hf), pred_(eq), classifier_(cs), keyget_() {
@@ -309,6 +326,24 @@ public:
     else return ConstIterEnd();
   }
 
+  void Erase(ConstIter it) {
+    Node** prv = FindNodePrev(it.bucket, it.node);
+    Node* tmp = *prv;
+    *prv = it.node->nxt;
+    free(tmp);
+    size_--;
+  }
+  template <class U> bool Erase(const U& val) {
+    Node** bucket = GetBucket(val);
+    Node** prv = FindValPrev(bucket, val);
+    if (!prv) return false;
+    Node* tmp = *prv;
+    *prv = tmp->nxt;
+    free(tmp);
+    size_--;
+    return true;
+  }
+
   void Rehash(size_t sz) {
     if (buckets_ && sz) {
       Node **oldbucket = buckets_, **oldend = buckets_end_;
@@ -433,6 +468,9 @@ public:
     auto it = base_.InsertIf(std::move(val));
     return std::make_pair(iterator(it.first), it.second);
   }
+
+  void erase(const_iterator it) { base_.Erase(it); }
+  size_type erase(const Key& val) { return base_.Erase(val); }
 
   size_type bucket_count() const { return base_.BucketCount(); }
   float load_factor() const { return (float)base_.size() / base_.BucketCount(); }
