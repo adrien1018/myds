@@ -232,6 +232,7 @@ public:
         }
       }
       std::fill(buckets_, buckets_end_, nullptr);
+      size_ = 0;
     }
   }
 
@@ -270,7 +271,7 @@ public:
       return {it, false};
     } else {
       size_++;
-      it.node = (Node*)malloc(sizeof(Node*));
+      it.node = (Node*)malloc(sizeof(Node));
       new (it.node) Node(val, *(it.bucket));
       *it.bucket = it.node;
       return {it, true};
@@ -284,7 +285,7 @@ public:
       return {it, false};
     } else {
       size_++;
-      it.node = (Node*)malloc(sizeof(Node*));
+      it.node = (Node*)malloc(sizeof(Node));
       new (it.node) Node(std::move(val), *(it.bucket));
       *it.bucket = it.node;
       return {it, true};
@@ -335,7 +336,7 @@ public:
     Iter it;
     it.bucket = buckets_;
     it.end = buckets_end_;
-    while (!*(it.bucket)) it.bucket++;
+    while (!*it.bucket) it.bucket++;
     it.node = *it.bucket;
     return it;
   }
