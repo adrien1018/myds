@@ -1,6 +1,7 @@
 #ifndef FIXSTRING_H_
 #define FIXSTRING_H_
 
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <algorithm>
@@ -16,23 +17,23 @@ public:
   typedef std::reverse_iterator<const char*> const_reverse_iterator;
 
   FixString() : str_(nullptr), size_(0) {}
-  ~FixString() { if (str_) delete[] str_; }
+  ~FixString() { if (str_) free(str_); }
   FixString(const char* s) : size_(strlen(s)) {
-    str_ = new char[size_ + 1];
+    str_ = (char*)malloc(size_ + 1);
     memcpy(str_, s, size_ + 1);
   }
   FixString(const FixString& s) : size_(s.size_) {
-    str_ = new char[size_ + 1];
+    str_ = (char*)malloc(size_ + 1);
     memcpy(str_, s.str_, size_ + 1);
   }
-  FixString(size_t sz) : size_(sz) { str_ = new char[size_ + 1](); }
+  FixString(size_t sz) : size_(sz) { str_ = (char*)calloc(1, size_ + 1); }
   FixString(FixString&& s) : str_(s.str_), size_(s.size_) { s.str_ = nullptr; }
 
   const FixString& operator=(const FixString& s) {
     if (s.str_ == str_) return *this;
     if (s.size_ != size_) {
-      if (str_) delete[] str_;
-      if (s.str_) str_ = new char[s.size_ + 1];
+      if (str_) free(str_);
+      if (s.str_) str_ = (char*)malloc(s.size_ + 1);
       size_ = s.size_;
     }
     memcpy(str_, s.str_, s.size_ + 1);
@@ -40,7 +41,7 @@ public:
   }
   const FixString& operator=(FixString&& s) {
     if (s.str_ == str_) return *this;
-    if (str_) delete[] str_;
+    if (str_) free(str_);
     str_ = s.str_; size_ = s.size_;
     s.str_ = nullptr;
   }

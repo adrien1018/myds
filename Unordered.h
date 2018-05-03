@@ -1,6 +1,7 @@
 #ifndef UNORDERED_H_
 #define UNORDERED_H_
 
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <algorithm>
@@ -22,6 +23,9 @@ public:
     Node(T&& val, Node* nxt = nullptr) : val(val), nxt(nxt) {}
     Node(const Node& a) : val(a.val), nxt(a.nxt) {}
     Node(Node&& a) : val(std::move(a.val)), nxt(a.nxt) {}
+    const Node& operator=(const Node& a) { val = a.val, nxt = a.nxt; return *this; }
+    const Node& operator=(Node&& a) { val = std::move(a.val), nxt = a.nxt; return *this; }
+
     T val;
     Node* nxt;
   };
@@ -34,13 +38,12 @@ public:
       if (bucket == end) return;
       node = node->nxt;
       if (node) return;
-      do {
-        bucket++;
+      while (++bucket != end) {
         if (*bucket) {
           node = *bucket;
           return;
         }
-      } while (bucket != end);
+      }
     }
   public:
     Iter() : bucket(nullptr), end(nullptr), node(nullptr) {}
@@ -65,13 +68,12 @@ public:
       if (bucket == end) return;
       node = node->nxt;
       if (node) return;
-      do {
-        bucket++;
+      while (++bucket != end) {
         if (*bucket) {
           node = *bucket;
           return;
         }
-      } while (bucket != end);
+      }
     }
   public:
     ConstIter() : bucket(nullptr), end(nullptr), node(nullptr) {}
@@ -129,10 +131,10 @@ private:
       for (Node** it = buckets_; it != buckets_end_; ++it) {
         for (Node *a = *it, *nxt; a; a = nxt) {
           nxt = a->nxt;
-          delete a;
+          free(a);
         }
       }
-      delete[] buckets_;
+      free(buckets_);
       buckets_ = buckets_end_ = nullptr;
     }
   }
@@ -143,7 +145,7 @@ public:
   UnorderedBase(size_t bucket = 1, const Hash& hf = Hash(), const Pred& eq = Pred(),
       const Cls& cs = Cls()) : size_(0), hasher_(hf), pred_(eq), classifier_(cs), keyget_() {
     if (bucket) {
-      buckets_ = new Node*[bucket]();
+      buckets_ = (Node**)calloc(sizeof(Node*), bucket);
       buckets_end_ = buckets_ + bucket;
     } else {
       buckets_ = buckets_end_ = nullptr;
@@ -154,19 +156,19 @@ public:
     for (Node** it = buckets_; it != buckets_end_; ++it) {
       for (Node *a = *it, *nxt; a; a = nxt) {
         nxt = a->nxt;
-        delete a;
+        free(a);
       }
     }
-    delete[] buckets_;
+    free(buckets_);
   }
   UnorderedBase(const UnorderedBase& mp) : size_(mp.size_), hasher_(mp.hasher_),
       pred_(mp.pred_), classifier_(mp.classifier_), keyget_() {
-    buckets_ = new Node*[mp.buckets_end_ - mp.buckets_]();
+    buckets_ = (Node**)calloc(sizeof(Node*), mp.buckets_end_ - mp.buckets_);
     buckets_end_ = buckets_ + (mp.buckets_end_ - mp.buckets_);
     for (Node **it = buckets_, **org = mp.buckets_; it != buckets_end_; ++it, ++org) {
       Node** prv = it;
       for (Node *a = *org; a; a = a->nxt) {
-        *prv = new Node(*a);
+        *prv = (Node*)malloc(sizeof(Node));
         prv = &a->nxt;
       }
     }
@@ -182,24 +184,24 @@ public:
       for (Node** it = buckets_; it != buckets_end_; ++it) {
         for (Node *a = *it, *nxt; a; a = nxt) {
           nxt = a->nxt;
-          delete a;
+          free(a);
         }
       }
       if (buckets_end_ - buckets_ != mp.buckets_end_ - mp.buckets_) {
-        delete[] buckets_;
-        buckets_ = new Node*[mp.buckets_end_ - mp.buckets_]();
+        free(buckets_);
+        buckets_ = (Node**)calloc(sizeof(Node*), mp.buckets_end_ - mp.buckets_);
         buckets_end_ = buckets_ + (mp.buckets_end_ - mp.buckets_);
       } else {
         std::fill(buckets_, buckets_end_, nullptr);
       }
     } else {
-      buckets_ = new Node*[mp.buckets_end_ - mp.buckets_]();
+      buckets_ = (Node**)calloc(sizeof(Node*), mp.buckets_end_ - mp.buckets_);
       buckets_end_ = buckets_ + (mp.buckets_end_ - mp.buckets_);
     }
     for (Node **it = buckets_, **org = mp.buckets_; it != buckets_end_; ++it, ++org) {
       Node** prv = it;
       for (Node *a = *org; a; a = a->nxt) {
-        *prv = new Node(*a);
+        *prv = (Node*)malloc(sizeof(Node));
         prv = &a->nxt;
       }
     }
@@ -226,7 +228,7 @@ public:
       for (Node** it = buckets_; it != buckets_end_; ++it) {
         for (Node *a = *it, *nxt; a; a = nxt) {
           nxt = a->nxt;
-          delete a;
+          free(a);
         }
       }
       std::fill(buckets_, buckets_end_, nullptr);
@@ -247,12 +249,18 @@ public:
   Iter Insert(const T& val) {
     size_++;
     Node** nd = GetBucket(val);
-    return MakeIter(nd, *nd = new Node(val, *nd));
+    Node* tmp = (Node*)malloc(sizeof(Node));
+    new (tmp) Node(val, *nd);
+    *nd = tmp;
+    return MakeIter(nd, *nd);
   }
   Iter Insert(T&& val) {
     size_++;
     Node** nd = GetBucket(val);
-    return MakeIter(nd, *nd = new Node(std::move(val), *nd));
+    Node* tmp = (Node*)malloc(sizeof(Node));
+    new (tmp) Node(std::move(val), *nd);
+    *nd = tmp;
+    return MakeIter(nd, *nd);
   }
   std::pair<Iter, bool> InsertIf(const T& val) {
     Iter it;
@@ -262,7 +270,9 @@ public:
       return {it, false};
     } else {
       size_++;
-      it.node = *(it.bucket) = new Node(val, *(it.bucket));
+      it.node = (Node*)malloc(sizeof(Node*));
+      new (it.node) Node(val, *(it.bucket));
+      *it.bucket = it.node;
       return {it, true};
     }
   }
@@ -274,7 +284,9 @@ public:
       return {it, false};
     } else {
       size_++;
-      it.node = *(it.bucket) = new Node(std::move(val), *(it.bucket));
+      it.node = (Node*)malloc(sizeof(Node*));
+      new (it.node) Node(std::move(val), *(it.bucket));
+      *it.bucket = it.node;
       return {it, true};
     }
   }
@@ -299,7 +311,7 @@ public:
   void Rehash(size_t sz) {
     if (buckets_ && sz) {
       Node **oldbucket = buckets_, **oldend = buckets_end_;
-      buckets_ = new Node*[sz]();
+      buckets_ = (Node**)calloc(sizeof(Node*), sz);
       buckets_end_ = buckets_ + sz;
       for (Node** it = oldbucket; it != oldend; ++it) {
         for (Node *a = *it, *nxt; a; a = nxt) {
@@ -309,15 +321,14 @@ public:
           *nd = a;
         }
       }
-      delete[] oldbucket;
+      free(oldbucket);
     } else if (sz) {
-      buckets_ = new Node*[sz]();
+      buckets_ = (Node**)calloc(sizeof(Node*), sz);
       buckets_end_ = buckets_ + sz;
     } else if (buckets_) {
       ClearAndRemove();
     }
   }
-
 
   Iter IterBegin() const {
     if (!size_) return IterEnd();
@@ -396,7 +407,7 @@ public:
   T& operator[](const Key& val) {
     CheckRehash();
     auto it = base_.InsertIf(std::make_pair(val, T()));
-    return it.first.GetPointer()->second;
+    return it.first->second;
   }
   T& operator[](Key&& val) {
     CheckRehash();
