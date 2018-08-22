@@ -24,8 +24,8 @@ template <class T> struct NodeVal_ : Node_ {
   T value;
   NodeVal_(const T& val) : Node_(), value(val) {}
   NodeVal_(T&& val) : Node_(), value(std::move(val)) {}
+  NodeVal_(NodeVal_* x, Node_* p) : Node_(*x, p), value(x->value) {}
   template <class... Args> NodeVal_(Args&&... args) : Node_(), value(args...) {}
-  NodeVal_(const NodeVal_& x, Node_* p) : Node_(x, p), value(x.value) {}
 };
 
 inline Node_* First_(Node_* nd) {
@@ -627,7 +627,7 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
   }
   NodeType_* GenNode_(NodeType_* x, NodeBase_* p) const {
     NodeType_* ptr = static_cast<NodeType_*>(malloc(sizeof(NodeType_)));
-    new(ptr) NodeType_(*x, p);
+    new(ptr) NodeType_(x, p);
     return ptr;
   }
   template <class... Args> NodeType_* GenNodeArgs_(Args&&... args) const {
@@ -664,11 +664,11 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
     NodeBase_* now = orig;
     while (true) {
       if (!dest->left && now->left) {
-        dest->left = Base_(GenNode_(Sup_(now->left), dest));
+        dest->left = GenNode_(Sup_(now->left), dest);
         dest = dest->left;
         now = now->left;
       } else if (!dest->right && now->right) {
-        dest->right = Base_(GenNode_(Sup_(now->right), dest));
+        dest->right = GenNode_(Sup_(now->right), dest);
         dest = dest->right;
         now = now->right;
       } else if (now == orig) {
@@ -830,28 +830,30 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
         tree.Remove_(First_(tree.head_->left)) : Remove_(Last_(head_->left));
     InsertMerge_(pivot, tree.head_);
   }
-  RBTree erase_split(iterator it) {
+  void erase_split(iterator it, RBTree& tree) {
     NodeBase_ *l, *r = Next_(it.ptr_);
-    RBTree ret;
+    tree.ClearTree_();
     if (it.ptr_ == head_->parent) head_->parent = head_;
-    if (r != head_) ret.head_->parent = r;
+    if (r != head_) tree.head_->parent = r;
     Split_(it.ptr_, l, r, false);
     FreeNode_(it.ptr_);
     ConnectLeft_(head_, l);
-    ConnectLeft_(ret.head_, r);
-    return ret;
+    ConnectLeft_(tree.head_, r);
   }
-  RBTree split(iterator it) {
-    if (it.ptr_ == head_) return RBTree();
+  void split(iterator it, RBTree& tree) {
+    tree.ClearTree_();
+    if (it.ptr_ == head_) return;
     NodeBase_ *l, *r;
-    RBTree ret;
     if (it.ptr_ == head_->parent) head_->parent = head_;
-    ret.head_->parent = it.ptr_;
+    tree.head_->parent = it.ptr_;
     Split_(it.ptr_, l, r, true);
     ConnectLeft_(head_, l);
-    ConnectLeft_(ret.head_, r);
-    return ret;
+    ConnectLeft_(tree.head_, r);
   }
 };
+
+template <class T, class U> void swap(RBTree<T, U>& a, RBTree<T, U>& b) {
+  a.swap(b);
+}
 
 #endif
