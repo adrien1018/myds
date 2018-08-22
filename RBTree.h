@@ -5,17 +5,17 @@
 #include <iterator>
 #include <algorithm>
 
-template <class T> class RBTree;
+template <class, class> class RBTree;
 
 namespace RBTreeBase_ {
 
 struct Node_ {
   Node_ *left, *right, *parent;
   size_t size;
-  uint8_t black_height; // 1 byte is very sufficient
+  uint8_t black_height; // starts from 1; 0 indicates phantom root
   bool black;
   Node_() : left(nullptr), right(nullptr), parent(nullptr),
-    size(1), black_height(0), black(false) {}
+    size(1), black_height(1), black(false) {}
   Node_(const Node_& x, Node_* p) : left(nullptr), right(nullptr), parent(p),
     size(x.size), black_height(x.black_height), black(x.black) {}
 };
@@ -65,12 +65,12 @@ inline size_t Size_(Node_* nd) {
 
 inline Node_* Next_(Node_* nd) {
   if (nd->right) return First_(nd->right);
-  for (; nd->parent && nd->parent->right == nd; nd = nd->parent);
+  for (; nd->black_height && nd->parent->right == nd; nd = nd->parent);
   return nd->parent;
 }
 inline Node_* Prev_(Node_* nd) {
   if (nd->left) return Last_(nd->left);
-  for (; nd->parent && nd->parent->left == nd; nd = nd->parent);
+  for (; nd->black_height && nd->parent->left == nd; nd = nd->parent);
   return nd->parent;
 }
 inline Node_* Select_(Node_* nd, size_t x) {
@@ -90,7 +90,7 @@ inline Node_* Advance_(Node_* nd, ptrdiff_t x) {
     size_t g = -x;
     while (Size_(nd->left) < g) {
       g -= Size_(nd->left) + 1;
-      for (; nd->parent && nd->parent->left == nd; nd = nd->parent);
+      for (; nd->black_height && nd->parent->left == nd; nd = nd->parent);
       nd = nd->parent;
       if (!g) return nd;
     }
@@ -99,7 +99,7 @@ inline Node_* Advance_(Node_* nd, ptrdiff_t x) {
     size_t g = x;
     while (Size_(nd->right) < g) {
       g -= Size_(nd->right) + 1;
-      for (; nd->parent && nd->parent->right == nd; nd = nd->parent);
+      for (; nd->black_height && nd->parent->right == nd; nd = nd->parent);
       nd = nd->parent;
       if (!g) return nd;
     }
@@ -109,7 +109,7 @@ inline Node_* Advance_(Node_* nd, ptrdiff_t x) {
 
 inline size_t Order_(Node_* nd) {
   size_t ans = Size_(nd->left);
-  for (; nd->parent; nd = nd->parent) {
+  for (; nd->black_height; nd = nd->parent) {
     if (nd->parent->right == nd) ans += Size_(nd->parent->left) + 1;
   }
   return ans;
@@ -174,13 +174,16 @@ template <class T> class Iterator_ {
   bool operator>=(const Self_& it) const { return !(*this < it); }
 
   bool is_null() const { return !ptr_; }
-  operator bool() const { return !ptr_; }
-  size_t tree_size() const { return ptr_->size; }
+  bool is_root() const { return !ptr_->parent || !ptr_->parent->black_height; }
+  size_t tree_size() const { return ptr_ ? ptr_->size : 0; }
+  Self_ parent() const { return ptr_->parent; }
   Self_ left_child() const { return ptr_->left; }
   Self_ right_child() const { return ptr_->right; }
+  bool is_black() const { return ptr_->black; }
+  int black_height() const { return ptr_->black_height; }
 
   friend class ConstIterator_<T>;
-  friend class RBTree<T>;
+  template <class, class> friend class ::RBTree;
 };
 
 template <class T>
@@ -245,12 +248,15 @@ template <class T> class ConstIterator_ {
   bool operator>=(const Self_& it) const { return !(*this < it); }
 
   bool is_null() const { return !ptr_; }
-  operator bool() const { return !ptr_; }
+  bool is_root() const { return !ptr_->parent || !ptr_->parent->black_height; }
   size_t tree_size() const { return ptr_->size; }
+  Self_ parent() const { return ptr_->parent; }
   Self_ left_child() const { return ptr_->left; }
   Self_ right_child() const { return ptr_->right; }
+  bool is_black() const { return ptr_->black; }
+  int black_height() const { return ptr_->black_height; }
 
-  friend class RBTree<T>;
+  template <class, class> friend class ::RBTree;
 };
 
 template <class T>
@@ -258,14 +264,20 @@ inline ConstIterator_<T> operator+(ptrdiff_t x, ConstIterator_<T> it) {
   return it + x;
 }
 
+struct NullClass_ {
+  template <class T> void operator()(T&& a) const {}
+};
+
 } // namespace RBTreeBase_
 
 #ifdef DEBUG
 #include <cstdio>
 bool MySwitch = false;
+extern int desc;
 #endif
 
-template <class T> class RBTree {
+template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
+ protected:
   typedef RBTreeBase_::Node_ NodeBase_;
   typedef RBTreeBase_::NodeVal_<T> NodeType_;
 
@@ -275,7 +287,7 @@ template <class T> class RBTree {
       printf("x ");
       return;
     }
-    printf("%d,sz%d,bh%d,%c ", a->value, (int)a->size, (int)a->black_height, a->black ? 'B' : 'R');
+    printf("%lld,%lld,sz%d,bh%d,%c ", a->value.a, a->value.sum, (int)a->size, (int)a->black_height, a->black ? 'B' : 'R');
     if (a->left || a->right) {
       printf("(");
       Print_((NodeType_*)a->left);
@@ -287,12 +299,14 @@ template <class T> class RBTree {
   bool CheckRB_(NodeBase_* a) const {
     if (!a) return true;
     uint8_t z = a->black_height - a->black;
-    auto H = [](NodeBase_* a){ return a ? a->black_height : 0; };
+    auto H = [](NodeBase_* a){ return a ? a->black_height : 1; };
     if (H(a->left) != z || H(a->right) != z || (!a->black &&
          ((a->left && !a->left->black) || (a->right && !a->right->black))) ||
         (a->left && a->left->parent != a) ||
         (a->right && a->right->parent != a) ||
         a->size != Size_(a->left) + Size_(a->right) + 1) return false;
+    if (Sup_(a)->value.sum != (a->left ? Sup_(a->left)->value.sum : 0) +
+        (a->right ? Sup_(a->right)->value.sum : 0) + Sup_(a)->value.a) return false;
     return CheckRB_(a->left) && CheckRB_(a->right);
   }
   bool CheckRB_() const {
@@ -300,31 +314,30 @@ template <class T> class RBTree {
   }
 #endif
 
-  virtual void Pull_(NodeBase_* nd) const {}
-
-  NodeBase_* Base_(NodeType_* nd) const {
-    return static_cast<NodeBase_*>(nd);
+  void Pull_(NodeBase_* nd) {
+    pull_func_(iterator(nd));
   }
+
   NodeType_* Sup_(NodeBase_* nd) const {
     return static_cast<NodeType_*>(nd);
   }
 
-  void PullSize_(NodeBase_* nd) const {
+  void PullSize_(NodeBase_* nd) {
     nd->size = Size_(nd->left) + Size_(nd->right) + 1;
     Pull_(nd);
   }
-  void PullSizeNoCheck_(NodeBase_* nd) const {
+  void PullSizeNoCheck_(NodeBase_* nd) {
     nd->size = nd->left->size + nd->right->size + 1;
     Pull_(nd);
   }
-  NodeBase_* IncreaseSize_(NodeBase_* nd, NodeBase_* head, size_t sz = 1) const {
+  NodeBase_* IncreaseSize_(NodeBase_* nd, NodeBase_* head, size_t sz = 1) {
     while (true) {
       nd->size += sz; Pull_(nd);
       if (nd->parent == head) return nd;
       nd = nd->parent;
     }
   }
-  void DecreaseSize_(NodeBase_* nd) const {
+  void DecreaseSize_(NodeBase_* nd) {
     for (; nd != head_; nd = nd->parent) nd->size--, Pull_(nd);
   }
   void PaintBlack_(NodeBase_* nd) const {
@@ -345,7 +358,6 @@ template <class T> class RBTree {
       }
       NodeBase_* g = p->parent;
       NodeBase_* u = g->left == p ? g->right : g->left;
-      if (MySwitch) printf("%d\n", Sup_(g)->value);
       if (!u || u->black) { // Case 4
         if (p == g->left) {
           if (nd == p->right) {
@@ -461,25 +473,29 @@ template <class T> class RBTree {
     }
   }
 
-  void InsertBefore_(NodeBase_* a, NodeType_* b) {
+  void InsertBefore_(NodeBase_* a, NodeBase_* b) {
     if (a != head_) {
       if (!a->left) {
+        if (a == head_->parent) head_->parent = b; // update begin
         ConnectLeftNoCheck_(a, b);
       } else {
         ConnectRightNoCheck_(Last_(a->left), b);
       }
     } else if (!head_->left) {
+      head_->parent = b; // update begin
       ConnectLeftNoCheck_(head_, b);
     } else {
       ConnectRightNoCheck_(Last_(head_->left), b);
     }
-    InsertRepair_(Base_(b), head_);
+    InsertRepair_(b, head_);
   }
   NodeBase_* Remove_(NodeBase_* a) {
     if (a->left && a->right) {
-      NodeBase_* tmp = Last_(a->left);
+      NodeBase_* tmp = First_(a->right); // begin won't be affected
       using std::swap; swap(Sup_(tmp)->value, Sup_(a)->value);
       a = tmp;
+    } else if (a == head_->parent) { // update begin
+      head_->parent = a->right ? First_(a->right) : a->parent;
     }
     if (!a->black) { // no child
       (a->parent->left == a ? a->parent->left : a->parent->right) = nullptr;
@@ -504,24 +520,24 @@ template <class T> class RBTree {
     if (!l) {
       m->left = m->right = nullptr; m->size = 1;
       if (!r) {
-        m->black = true; m->black_height = 1;
+        m->black = true; m->black_height = 2; Pull_(m);
         return m;
       }
-      m->black = false; m->black_height = 0;
-      ConnectLeftNoCheck_(First_(r), m);
+      m->black = false; m->black_height = 1;
+      ConnectLeftNoCheck_(First_(r), m); Pull_(m);
       return InsertRepair_(m, r->parent = nullptr);
     }
     if (!r) {
       m->left = m->right = nullptr; m->size = 1;
-      m->black = false; m->black_height = 0;
-      ConnectRightNoCheck_(Last_(l), m);
+      m->black = false; m->black_height = 1;
+      ConnectRightNoCheck_(Last_(l), m); Pull_(m);
       return InsertRepair_(m, l->parent = nullptr);
     }
     if (l->black_height == r->black_height){
       ConnectLeftNoCheck_(m, l);
       ConnectRightNoCheck_(m, r);
-      PullSizeNoCheck_(m);
       m->black = true; m->black_height = l->black_height + 1;
+      PullSizeNoCheck_(m);
       return m;
     }
     if (l->black_height < r->black_height) {
@@ -530,8 +546,8 @@ template <class T> class RBTree {
       ConnectParentNoCheck_(r, m);
       ConnectLeftNoCheck_(m, l);
       ConnectRightNoCheck_(m, r);
-      PullSizeNoCheck_(m);
       m->black = false; m->black_height = l->black_height;
+      PullSizeNoCheck_(m);
       ret = InsertRepair_(m, ret->parent = nullptr, l->size + 1);
       return ret;
     } else {
@@ -540,8 +556,8 @@ template <class T> class RBTree {
       ConnectParentNoCheck_(l, m);
       ConnectLeftNoCheck_(m, l);
       ConnectRightNoCheck_(m, r);
-      PullSizeNoCheck_(m);
       m->black = false; m->black_height = l->black_height;
+      PullSizeNoCheck_(m);
       ret = InsertRepair_(m, ret->parent = nullptr, r->size + 1);
       return ret;
     }
@@ -565,7 +581,13 @@ template <class T> class RBTree {
     }
   }
 
-  template <class Pred> NodeBase_* PartitionBound_(Pred func) {
+  void InsertMerge_(NodeBase_* nd, NodeBase_* head2) {
+    if (!head_->left) head_->parent = nd;
+    ConnectLeft_(head_, Merge_(head_->left, nd, head2->left));
+    head2->left = nullptr; head2->parent = head_;
+  }
+
+  template <class Pred> NodeBase_* PartitionBound_(Pred func) const {
     // first element x that func(x) is false, assuming monotonicity
     NodeBase_ *now = head_->left, *last = head_;
     while (now) {
@@ -579,7 +601,7 @@ template <class T> class RBTree {
     }
     return last;
   }
-  template <class Pred> NodeBase_* PartitionBoundIter_(Pred func) {
+  template <class Pred> NodeBase_* PartitionBoundIter_(Pred func) const {
     // same as PartitionBound, but const_iterator is passed to func
     NodeBase_ *now = head_->left, *last = head_;
     while (now) {
@@ -636,7 +658,7 @@ template <class T> class RBTree {
       }
     }
   }
-  void ClearTree_() { ClearTree_(head_); }
+  void ClearTree_() { ClearTree_(head_); head_->parent = head_; }
 
   void CopyTree_(NodeBase_* dest, NodeBase_* orig) {
     NodeBase_* now = orig;
@@ -661,10 +683,12 @@ template <class T> class RBTree {
   void Init_() {
     head_ = static_cast<NodeBase_*>(malloc(sizeof(NodeBase_)));
     new(head_) NodeBase_();
+    head_->parent = head_; head_->black_height = 0;
   }
 
   NodeBase_* head_;
-public:
+  PullFunc pull_func_;
+ public:
   typedef T value_type;
   typedef T& reference;
   typedef const T& const_reference;
@@ -699,8 +723,8 @@ public:
     return *this;
   }
 
-  iterator begin() { return First_(head_); }
-  const_iterator begin() const { return First_(head_); }
+  iterator begin() { return head_->parent; }
+  const_iterator begin() const { return head_->parent; }
   const_iterator cbegin() const { return begin(); }
   iterator end() { return head_; }
   const_iterator end() const { return head_; }
@@ -717,6 +741,9 @@ public:
   }
   const_reverse_iterator crend() const { return rend(); }
 
+  iterator root() { return head_->left; }
+  const_iterator root() const { return head_->left; }
+
 #ifdef DEBUG
   void print_() const { Print_(Sup_(head_->left)); puts(""); }
   bool check_() const { return CheckRB_(); }
@@ -731,8 +758,8 @@ public:
   const_reference operator[](size_type x) const {
     return Sup_(Select_(head_->left, x))->value;
   }
-  reference front() { return Sup_(First_(head_->left))->value; }
-  const_reference front() const { return Sup_(First_(head_->left))->value; }
+  reference front() { return Sup_(head_->parent)->value; }
+  const_reference front() const { return Sup_(head_->parent)->value; }
   reference back() { return Sup_(Last_(head_->left))->value; }
   const_reference back() const { return Sup_(Last_(head_->left))->value; }
   template <class Pred> iterator partition_bound(Pred func) {
@@ -788,30 +815,26 @@ public:
 
   void swap(RBTree& x) { std::swap(head_, x.head_); }
   void insert_merge(RBTree& tree, const T& val) {
-    ConnectLeft_(head_, Merge_(head_->left, GenNode_(val), tree.head_->left));
-    tree.head_->left = nullptr;
+    InsertMerge_(GenNode_(val), tree.head_);
   }
   void insert_merge(RBTree& tree, T&& val) {
-    ConnectLeft_(head_, Merge_(head_->left,
-                               GenNode_(std::move(val)), tree.head_->left));
-    tree.head_->left = nullptr;
+    InsertMerge_(GenNode_(std::move(val)), tree.head_);
   }
   template <class... Args> void emplace_merge(RBTree& tree, Args&&... args) {
-    ConnectLeft_(head_, Merge_(head_->left,
-                               GenNodeArgs_(args...), tree.head_->left));
-    tree.head_->left = nullptr;
+    InsertMerge_(GenNodeArgs_(args...), tree.head_);
   }
   void merge(RBTree& tree) {
     if (tree.empty()) return;
     if (empty()) { std::swap(head_, tree.head_); return; }
     NodeBase_* pivot = (tree.head_->left->size < head_->left->size) ?
         tree.Remove_(First_(tree.head_->left)) : Remove_(Last_(head_->left));
-    ConnectLeft_(head_, Merge_(head_->left, pivot, tree.head_->left));
-    tree.head_->left = nullptr;
+    InsertMerge_(pivot, tree.head_);
   }
-  RBTree erase_and_split(iterator it) {
-    NodeBase_ *l, *r;
+  RBTree erase_split(iterator it) {
+    NodeBase_ *l, *r = Next_(it.ptr_);
     RBTree ret;
+    if (it.ptr_ == head_->parent) head_->parent = head_;
+    if (r != head_) ret.head_->parent = r;
     Split_(it.ptr_, l, r, false);
     FreeNode_(it.ptr_);
     ConnectLeft_(head_, l);
@@ -819,9 +842,11 @@ public:
     return ret;
   }
   RBTree split(iterator it) {
-    if (it == end()) return RBTree();
+    if (it.ptr_ == head_) return RBTree();
     NodeBase_ *l, *r;
     RBTree ret;
+    if (it.ptr_ == head_->parent) head_->parent = head_;
+    ret.head_->parent = it.ptr_;
     Split_(it.ptr_, l, r, true);
     ConnectLeft_(head_, l);
     ConnectLeft_(ret.head_, r);
