@@ -5,7 +5,7 @@
 #include <iterator>
 #include <algorithm>
 
-template <class, class> class RBTree;
+template <class T, class PullFunc, class PushFunc> class RBTree;
 
 namespace RBTreeBase_ {
 
@@ -179,11 +179,13 @@ template <class T> class Iterator_ {
   Self_ parent() const { return ptr_->parent; }
   Self_ left_child() const { return ptr_->left; }
   Self_ right_child() const { return ptr_->right; }
+  Self_ first() const { return First_(ptr_); }
+  Self_ last() const { return Last_(ptr_); }
   bool is_black() const { return ptr_->black; }
   int black_height() const { return ptr_->black_height; }
 
   friend class ConstIterator_<T>;
-  template <class, class> friend class ::RBTree;
+  template <class, class, class> friend class ::RBTree;
 };
 
 template <class T>
@@ -253,10 +255,12 @@ template <class T> class ConstIterator_ {
   Self_ parent() const { return ptr_->parent; }
   Self_ left_child() const { return ptr_->left; }
   Self_ right_child() const { return ptr_->right; }
+  Self_ first() const { return First_(ptr_); }
+  Self_ last() const { return Last_(ptr_); }
   bool is_black() const { return ptr_->black; }
   int black_height() const { return ptr_->black_height; }
 
-  template <class, class> friend class ::RBTree;
+  template <class, class, class> friend class ::RBTree;
 };
 
 template <class T>
@@ -276,7 +280,8 @@ bool MySwitch = false;
 extern int desc;
 #endif
 
-template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
+template <class T, class PullFunc = RBTreeBase_::NullClass_,
+    class PushFunc = RBTreeBase_::NullClass_> class RBTree {
  protected:
   typedef RBTreeBase_::Node_ NodeBase_;
   typedef RBTreeBase_::NodeVal_<T> NodeType_;
@@ -287,7 +292,9 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
       printf("x ");
       return;
     }
-    printf("%lld,%lld,sz%d,bh%d,%c ", a->value.a, a->value.sum, (int)a->size, (int)a->black_height, a->black ? 'B' : 'R');
+    /*printf("%lld,%lld,%lld,sz%d,bh%d,%c ", a->value.a, a->value.sum, a->value.tag,
+           (int)a->size, (int)a->black_height, a->black ? 'B' : 'R');*/
+    printf("%lld,s%lld,tag%lld ", a->value.a, a->value.sum, a->value.tag);
     if (a->left || a->right) {
       printf("(");
       Print_((NodeType_*)a->left);
@@ -305,8 +312,10 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
         (a->left && a->left->parent != a) ||
         (a->right && a->right->parent != a) ||
         a->size != Size_(a->left) + Size_(a->right) + 1) return false;
-    if (Sup_(a)->value.sum != (a->left ? Sup_(a->left)->value.sum : 0) +
-        (a->right ? Sup_(a->right)->value.sum : 0) + Sup_(a)->value.a) return false;
+    if (Sup_(a)->value.sum !=
+        (a->left ? Sup_(a->left)->value.sum + Sup_(a->left)->value.tag * (long)a->left->size : 0) +
+        (a->right ? Sup_(a->right)->value.sum + Sup_(a->right)->value.tag * (long)a->right->size : 0) +
+        Sup_(a)->value.a) return false;
     return CheckRB_(a->left) && CheckRB_(a->right);
   }
   bool CheckRB_() const {
@@ -315,13 +324,23 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
 #endif
 
   void Pull_(NodeBase_* nd) {
-    pull_func_(iterator(nd));
+    if (!std::is_same<PullFunc, RBTreeBase_::NullClass_>::value) {
+      pull_func_(iterator(nd));
+    }
+  }
+  void Push_(NodeBase_* nd) {
+    if (!std::is_same<PushFunc, RBTreeBase_::NullClass_>::value) {
+      push_func_(iterator(nd));
+    }
   }
 
   NodeType_* Sup_(NodeBase_* nd) const {
     return static_cast<NodeType_*>(nd);
   }
 
+  void PaintBlack_(NodeBase_* nd) const {
+    if (nd) nd->black_height += !nd->black, nd->black = true;
+  }
   void PullSize_(NodeBase_* nd) {
     nd->size = Size_(nd->left) + Size_(nd->right) + 1;
     Pull_(nd);
@@ -340,8 +359,25 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
   void DecreaseSize_(NodeBase_* nd) {
     for (; nd != head_; nd = nd->parent) nd->size--, Pull_(nd);
   }
-  void PaintBlack_(NodeBase_* nd) const {
-    if (nd) nd->black_height += !nd->black, nd->black = true;
+  void PullFrom_(NodeBase_* nd) {
+    if (!std::is_same<PullFunc, RBTreeBase_::NullClass_>::value) {
+      for (nd = nd->parent; nd != head_; nd = nd->parent) Pull_(nd);
+    }
+  }
+  void PushTo_(NodeBase_* nd, NodeBase_* head) {
+    if (!std::is_same<PushFunc, RBTreeBase_::NullClass_>::value) {
+      unsigned __int128 dir = 0; // bitmap to locate the node
+      int sz = 0;
+      for (; nd->parent != head; nd = nd->parent, sz++) {
+        dir = nd->parent->right == nd ? dir << 1 | 1 : dir << 1;
+      }
+      Push_(nd);
+      while (sz--) {
+        nd = dir & 1 ? nd->right : nd->left;
+        Push_(nd);
+        dir >>= 1;
+      }
+    }
   }
 
   NodeBase_* InsertRepair_(NodeBase_* nd, NodeBase_* head, size_t sz = 1) {
@@ -400,6 +436,7 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
     NodeBase_* nd = nullptr;
     while (true) {
       if (!s->black) { // Case 2
+        Push_(s);
         p->black = false; p->black_height--;
         s->black = true; s->black_height++;
         ConnectParentNoCheck_(p, s);
@@ -433,6 +470,7 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
     NodeBase_* sin = p->left == s ? s->right : s->left;
     NodeBase_* sout = p->left == s ? s->left : s->right;
     if (sout && !sout->black) { // Case 6
+      Push_(s);
       sout->black = true; sout->black_height++;
       s->black_height += p->black;
       p->black_height -= p->black;
@@ -448,6 +486,7 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
       PullSize_(p); PullSizeNoCheck_(s);
       DecreaseSize_(s->parent);
     } else if (sin && !sin->black) { // Case 5
+      Push_(s); Push_(sin);
       p->black_height -= p->black;
       sin->black_height += 1 + p->black;
       sin->black = p->black;
@@ -476,26 +515,35 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
   void InsertBefore_(NodeBase_* a, NodeBase_* b) {
     if (a != head_) {
       if (!a->left) {
-        if (a == head_->parent) head_->parent = b; // update begin
+        if (a == head_->parent) head_->parent = b;
+        PushTo_(a, head_);
         ConnectLeftNoCheck_(a, b);
       } else {
-        ConnectRightNoCheck_(Last_(a->left), b);
+        a = Last_(a->left);
+        PushTo_(a, head_);
+        ConnectRightNoCheck_(a, b);
       }
     } else if (!head_->left) {
-      head_->parent = b; // update begin
+      head_->parent = b;
       ConnectLeftNoCheck_(head_, b);
     } else {
-      ConnectRightNoCheck_(Last_(head_->left), b);
+      a = Last_(head_->left);
+      PushTo_(a, head_);
+      ConnectRightNoCheck_(a, b);
     }
     InsertRepair_(b, head_);
   }
   NodeBase_* Remove_(NodeBase_* a) {
     if (a->left && a->right) {
       NodeBase_* tmp = First_(a->right); // begin won't be affected
+      PushTo_(tmp, head_);
       using std::swap; swap(Sup_(tmp)->value, Sup_(a)->value);
       a = tmp;
-    } else if (a == head_->parent) { // update begin
-      head_->parent = a->right ? First_(a->right) : a->parent;
+    } else {
+      PushTo_(a, head_);
+      if (a == head_->parent) {
+        head_->parent = a->right ? First_(a->right) : a->parent;
+      }
     }
     if (!a->black) { // no child
       (a->parent->left == a ? a->parent->left : a->parent->right) = nullptr;
@@ -524,13 +572,15 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
         return m;
       }
       m->black = false; m->black_height = 1;
-      ConnectLeftNoCheck_(First_(r), m); Pull_(m);
+      l = First_(r); PushTo_(l, r->parent);
+      ConnectLeftNoCheck_(l, m); Pull_(m);
       return InsertRepair_(m, r->parent = nullptr);
     }
     if (!r) {
       m->left = m->right = nullptr; m->size = 1;
       m->black = false; m->black_height = 1;
-      ConnectRightNoCheck_(Last_(l), m); Pull_(m);
+      r = Last_(l); PushTo_(r, l->parent);
+      ConnectRightNoCheck_(r, m); Pull_(m);
       return InsertRepair_(m, l->parent = nullptr);
     }
     if (l->black_height == r->black_height){
@@ -542,7 +592,9 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
     }
     if (l->black_height < r->black_height) {
       NodeBase_* ret = r;
-      for (; !r->black || l->black_height != r->black_height; r = r->left);
+      for (; !r->black || l->black_height != r->black_height; r = r->left) {
+        Push_(r);
+      }
       ConnectParentNoCheck_(r, m);
       ConnectLeftNoCheck_(m, l);
       ConnectRightNoCheck_(m, r);
@@ -552,7 +604,9 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
       return ret;
     } else {
       NodeBase_* ret = l;
-      for (; !l->black || l->black_height != r->black_height; l = l->right);
+      for (; !l->black || l->black_height != r->black_height; l = l->right) {
+        Push_(l);
+      }
       ConnectParentNoCheck_(l, m);
       ConnectLeftNoCheck_(m, l);
       ConnectRightNoCheck_(m, r);
@@ -563,6 +617,7 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
     }
   }
   void Split_(NodeBase_* nd, NodeBase_*& left, NodeBase_*& right, bool pivot) {
+    PushTo_(nd, head_);
     NodeBase_* p = nd->parent;
     left = nd->left; right = nd->right;
     PaintBlack_(left); PaintBlack_(right);
@@ -688,6 +743,7 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
 
   NodeBase_* head_;
   PullFunc pull_func_;
+  PushFunc push_func_;
  public:
   typedef T value_type;
   typedef T& reference;
@@ -757,6 +813,11 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
   }
   const_reference operator[](size_type x) const {
     return Sup_(Select_(head_->left, x))->value;
+  }
+  reference at(size_type x) {
+    NodeBase_* ptr = Select_(head_->left, x);
+    PushTo_(ptr, head_);
+    return Sup_(ptr)->value;
   }
   reference front() { return Sup_(head_->parent)->value; }
   const_reference front() const { return Sup_(head_->parent)->value; }
@@ -850,6 +911,16 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_> class RBTree {
     ConnectLeft_(head_, l);
     ConnectLeft_(tree.head_, r);
   }
+
+  void pull_node(iterator it) { Pull_(it.ptr_); }
+  void push_node(iterator it) { Push_(it.ptr_); }
+  void pull_from(iterator it) { PullFrom_(it.ptr_); }
+  void push_to(iterator it) { PushTo_(it.ptr_, head_); }
+
+  PullFunc& get_pull_object() { return pull_func_; }
+  PushFunc& get_push_object() { return push_func_; }
+  const PullFunc& get_pull_object() const { return pull_func_; }
+  const PushFunc& get_push_object() const { return push_func_; }
 };
 
 template <class T, class U> void swap(RBTree<T, U>& a, RBTree<T, U>& b) {
