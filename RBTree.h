@@ -36,6 +36,20 @@ inline Node_* Last_(Node_* nd) {
   for (; nd->right; nd = nd->right);
   return nd;
 }
+inline Node_* PostorderFirst_(Node_* nd) {
+  while (true) {
+    if (nd->left) nd = nd->left;
+    else if (nd->right) nd = nd->right;
+    else return nd;
+  }
+}
+inline Node_* PreorderLast_(Node_* nd) {
+  while (true) {
+    if (nd->right) nd = nd->right;
+    else if (nd->left) nd = nd->left;
+    else return nd;
+  }
+}
 
 inline void ConnectLeft_(Node_* p, Node_* ch) {
   p->left = ch;
@@ -72,6 +86,28 @@ inline Node_* Prev_(Node_* nd) {
   if (nd->left) return Last_(nd->left);
   for (; nd->black_height && nd->parent->left == nd; nd = nd->parent);
   return nd->parent;
+}
+inline Node_* PreorderNext_(Node_* nd) {
+  if (nd->left) return nd->left;
+  if (nd->right) return nd->right;
+  for (; nd->black_height && (!nd->parent->right || nd->parent->right == nd);
+       nd = nd->parent);
+  return nd->black_height ? nd->parent->right : nd;
+}
+inline Node_* PreorderPrev_(Node_* nd) {
+  if (!nd->black_height) return PreorderLast_(nd->left);
+  if (!nd->parent->left || nd->parent->left == nd) return nd->parent;
+  return PreorderLast_(nd->parent->left);
+}
+inline Node_* PostorderNext_(Node_* nd) {
+  if (!nd->parent->right || nd->parent->right == nd) return nd->parent;
+  return PostorderFirst_(nd->parent->right);
+}
+inline Node_* PostorderPrev_(Node_* nd) {
+  if (nd->right) return nd->right;
+  if (nd->left) return nd->left;
+  for (; !nd->parent->left || nd->parent->left == nd; nd = nd->parent);
+  return nd->parent->left; // since begin-- is UB
 }
 inline Node_* Select_(Node_* nd, size_t x) {
   while (true) {
@@ -119,6 +155,8 @@ inline ptrdiff_t Difference_(Node_* a, Node_* b) {
 }
 
 template <class T> class ConstIterator_;
+template <class T> class PreorderIterator_;
+template <class T> class PostorderIterator_;
 template <class T> class Iterator_ {
   Node_* ptr_;
   typedef Iterator_ Self_;
@@ -133,6 +171,8 @@ template <class T> class Iterator_ {
   typedef ptrdiff_t difference_type;
 
   Iterator_() : ptr_(nullptr) {}
+  Iterator_(const PreorderIterator_<T>& it) : ptr_(it.ptr_) {}
+  Iterator_(const PostorderIterator_<T>& it) : ptr_(it.ptr_) {}
 
   reference operator*() const { return static_cast<NodeVal_<T>*>(ptr_)->value; }
   pointer operator->() const { return &static_cast<NodeVal_<T>*>(ptr_)->value; }
@@ -185,6 +225,8 @@ template <class T> class Iterator_ {
   int black_height() const { return ptr_->black_height; }
 
   friend class ConstIterator_<T>;
+  friend class PreorderIterator_<T>;
+  friend class PostorderIterator_<T>;
   template <class, class, class> friend class ::RBTree;
 };
 
@@ -263,14 +305,90 @@ template <class T> class ConstIterator_ {
   template <class, class, class> friend class ::RBTree;
 };
 
+template <class T> class PreorderIterator_ {
+  Node_* ptr_;
+  typedef PreorderIterator_ Self_;
+
+  PreorderIterator_(Node_* ptr) : ptr_(ptr) {}
+  PreorderIterator_(NodeVal_<T>* ptr) : ptr_(static_cast<Node_*>(ptr)) {}
+ public:
+  // iterator tags
+  typedef T value_type;
+  typedef T& reference;
+  typedef T* pointer;
+  typedef std::bidirectional_iterator_tag iterator_category;
+  typedef ptrdiff_t difference_type;
+
+  PreorderIterator_() : ptr_(nullptr) {}
+  PreorderIterator_(const Iterator_<T>& it) : ptr_(it.ptr_) {}
+  PreorderIterator_(const PostorderIterator_<T>& it) : ptr_(it.ptr_) {}
+
+  reference operator*() const { return static_cast<NodeVal_<T>*>(ptr_)->value; }
+  pointer operator->() const { return &static_cast<NodeVal_<T>*>(ptr_)->value; }
+  Self_& operator++() { ptr_ = PreorderNext_(ptr_); return *this; }
+  Self_& operator--() { ptr_ = PreorderPrev_(ptr_); return *this; }
+  Self_ operator++(int) {
+    Self_ tmp = *this;
+    ptr_ = PreorderNext_(ptr_);
+    return tmp;
+  }
+  Self_ operator--(int) {
+    Self_ tmp = *this;
+    ptr_ = PreorderPrev_(ptr_);
+    return tmp;
+  }
+  bool operator==(const Self_& it) const { return ptr_ == it.ptr_; }
+  bool operator!=(const Self_& it) const { return ptr_ != it.ptr_; }
+
+  friend class Iterator_<T>;
+  friend class PostorderIterator_<T>;
+  template <class, class, class> friend class ::RBTree;
+};
+
+template <class T> class PostorderIterator_ {
+  Node_* ptr_;
+  typedef PostorderIterator_ Self_;
+
+  PostorderIterator_(Node_* ptr) : ptr_(ptr) {}
+  PostorderIterator_(NodeVal_<T>* ptr) : ptr_(static_cast<Node_*>(ptr)) {}
+ public:
+  // iterator tags
+  typedef T value_type;
+  typedef T& reference;
+  typedef T* pointer;
+  typedef std::bidirectional_iterator_tag iterator_category;
+  typedef ptrdiff_t difference_type;
+
+  PostorderIterator_() : ptr_(nullptr) {}
+  PostorderIterator_(const Iterator_<T>& it) : ptr_(it.ptr_) {}
+  PostorderIterator_(const PreorderIterator_<T>& it) : ptr_(it.ptr_) {}
+
+  reference operator*() const { return static_cast<NodeVal_<T>*>(ptr_)->value; }
+  pointer operator->() const { return &static_cast<NodeVal_<T>*>(ptr_)->value; }
+  Self_& operator++() { ptr_ = PostorderNext_(ptr_); return *this; }
+  Self_& operator--() { ptr_ = PostorderPrev_(ptr_); return *this; }
+  Self_ operator++(int) {
+    Self_ tmp = *this;
+    ptr_ = PostorderNext_(ptr_);
+    return tmp;
+  }
+  Self_ operator--(int) {
+    Self_ tmp = *this;
+    ptr_ = PostorderPrev_(ptr_);
+    return tmp;
+  }
+  bool operator==(const Self_& it) const { return ptr_ == it.ptr_; }
+  bool operator!=(const Self_& it) const { return ptr_ != it.ptr_; }
+
+  friend class Iterator_<T>;
+  friend class PreorderIterator_<T>;
+  template <class, class, class> friend class ::RBTree;
+};
+
 template <class T>
 inline ConstIterator_<T> operator+(ptrdiff_t x, ConstIterator_<T> it) {
   return it + x;
 }
-
-struct NullClass_ {
-  template <class T> void operator()(T&& a) const {}
-};
 
 } // namespace RBTreeBase_
 
@@ -280,8 +398,16 @@ bool MySwitch = false;
 extern int desc;
 #endif
 
-template <class T, class PullFunc = RBTreeBase_::NullClass_,
-    class PushFunc = RBTreeBase_::NullClass_> class RBTree {
+struct Nop {
+  template <class T> void operator()(T&& a) const {}
+};
+
+template <class T> using RBTreeIterator = RBTreeBase_::Iterator_<T>;
+template <class T> using RBTreeConstIterator = RBTreeBase_::ConstIterator_<T>;
+template <class T> using RBTreePreorderIterator = RBTreeBase_::PreorderIterator_<T>;
+template <class T> using RBTreePostorderIterator = RBTreeBase_::PostorderIterator_<T>;
+
+template <class T, class PullFunc = Nop, class PushFunc = Nop> class RBTree {
  protected:
   typedef RBTreeBase_::Node_ NodeBase_;
   typedef RBTreeBase_::NodeVal_<T> NodeType_;
@@ -324,12 +450,12 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
 #endif
 
   void Pull_(NodeBase_* nd) {
-    if (!std::is_same<PullFunc, RBTreeBase_::NullClass_>::value) {
+    if (!std::is_same<PullFunc, Nop>::value) {
       pull_func_(iterator(nd));
     }
   }
   void Push_(NodeBase_* nd) {
-    if (!std::is_same<PushFunc, RBTreeBase_::NullClass_>::value) {
+    if (!std::is_same<PushFunc, Nop>::value) {
       push_func_(iterator(nd));
     }
   }
@@ -360,12 +486,12 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
     for (; nd != head_; nd = nd->parent) nd->size--, Pull_(nd);
   }
   void PullFrom_(NodeBase_* nd) {
-    if (!std::is_same<PullFunc, RBTreeBase_::NullClass_>::value) {
+    if (!std::is_same<PullFunc, Nop>::value) {
       for (nd = nd->parent; nd != head_; nd = nd->parent) Pull_(nd);
     }
   }
   void PushTo_(NodeBase_* nd, NodeBase_* head) {
-    if (!std::is_same<PushFunc, RBTreeBase_::NullClass_>::value) {
+    if (!std::is_same<PushFunc, Nop>::value) {
       unsigned __int128 dir = 0; // bitmap to locate the node
       int sz = 0;
       for (; nd->parent != head; nd = nd->parent, sz++) {
@@ -642,10 +768,11 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
     head2->left = nullptr; head2->parent = head_;
   }
 
-  template <class Pred> NodeBase_* PartitionBound_(Pred func) const {
+  template <class Pred> NodeBase_* PartitionBound_(Pred&& func) {
     // first element x that func(x) is false, assuming monotonicity
     NodeBase_ *now = head_->left, *last = head_;
     while (now) {
+      Push_(now);
       const T& val = Sup_(now)->value; // just add constness
       if (func(val)) {
         now = now->right;
@@ -656,10 +783,11 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
     }
     return last;
   }
-  template <class Pred> NodeBase_* PartitionBoundIter_(Pred func) const {
+  template <class Pred> NodeBase_* PartitionBoundIter_(Pred&& func) {
     // same as PartitionBound, but const_iterator is passed to func
     NodeBase_ *now = head_->left, *last = head_;
     while (now) {
+      Push_(now);
       if (func(const_iterator(now))) {
         now = now->right;
       } else {
@@ -750,8 +878,10 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
   typedef const T& const_reference;
   typedef size_t size_type;
   typedef ptrdiff_t difference_type;
-  typedef RBTreeBase_::Iterator_<T> iterator;
-  typedef RBTreeBase_::ConstIterator_<T> const_iterator;
+  typedef RBTreeIterator<T> iterator;
+  typedef RBTreeConstIterator<T> const_iterator;
+  typedef RBTreePreorderIterator<T> preorder_iterator;
+  typedef RBTreePostorderIterator<T> postorder_iterator;
   typedef std::reverse_iterator<iterator> reverse_iterator;
   typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
@@ -786,6 +916,11 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
   const_iterator end() const { return head_; }
   const_iterator cend() const { return end(); }
 
+  preorder_iterator pre_begin() { return head_->left; }
+  preorder_iterator pre_end() { return head_; }
+  postorder_iterator post_begin() { return PostorderFirst_(head_->parent); }
+  postorder_iterator post_end() { return head_; }
+
   reverse_iterator rbegin() { return reverse_iterator(end()); }
   const_reverse_iterator rbegin() const {
     return const_reverse_iterator(end());
@@ -815,24 +950,27 @@ template <class T, class PullFunc = RBTreeBase_::NullClass_,
     return Sup_(Select_(head_->left, x))->value;
   }
   reference at(size_type x) {
-    NodeBase_* ptr = Select_(head_->left, x);
-    PushTo_(ptr, head_);
-    return Sup_(ptr)->value;
+    NodeBase_* nd = head_->left;
+    while (true) {
+      Push_(nd);
+      if (Size_(nd->left) == x) break;
+      if (Size_(nd->left) > x) {
+        nd = nd->left;
+      } else {
+        x -= Size_(nd->left) + 1;
+        nd = nd->right;
+      }
+    }
+    return Sup_(nd)->value;
   }
   reference front() { return Sup_(head_->parent)->value; }
   const_reference front() const { return Sup_(head_->parent)->value; }
   reference back() { return Sup_(Last_(head_->left))->value; }
   const_reference back() const { return Sup_(Last_(head_->left))->value; }
-  template <class Pred> iterator partition_bound(Pred func) {
+  template <class Pred> iterator partition_bound(Pred&& func) {
     return PartitionBound_(func);
   }
-  template <class Pred> const_iterator partition_bound(Pred func) const {
-    return PartitionBound_(func);
-  }
-  template <class Pred> iterator iter_partition_bound(Pred func) {
-    return PartitionBoundIter_(func);
-  }
-  template <class Pred> const_iterator iter_partition_bound(Pred func) const {
+  template <class Pred> iterator iter_partition_bound(Pred&& func) {
     return PartitionBoundIter_(func);
   }
 
