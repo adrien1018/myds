@@ -18,7 +18,8 @@ template <class T> class Array {
   value_type* arr_;
   void CheckRealloc_(size_type x) {
     if (x > cap_) {
-      arr_ = (value_type*)realloc(arr_, cap_ = std::max(x, cap_ * 2 + 1));
+      cap_ = std::max(x, cap_ * 2 + 1);
+      arr_ = (value_type*)realloc(arr_, cap_ * sizeof(value_type));
     }
   }
   template <class... Args> void Construct(size_type x, Args&&... args) {

@@ -17,6 +17,8 @@ template <class T> struct Point2D {
   template <class U> Point2D& operator/=(const U& a) {
     x /= a; y /= a; return *this;
   }
+  bool operator==(const Point2D& a) const { return x == a.x && y == a.y; }
+  bool operator!=(const Point2D& a) const { return !operator==(a); }
 };
 
 template <class T> Point2D<T> operator+(Point2D<T> a, const Point2D<T>& b) {
@@ -33,6 +35,17 @@ template <class T, class U> Point2D<T> operator/(Point2D<T> a, const U& b) {
 }
 template <class T> Point2D<T> operator-(const Point2D<T>& a) {
   return Point2D<T>(-a.x, -a.y);
+}
+
+template <class T> T Dot(const Point2D<T>& a, const Point2D<T>& b) {
+  return a.x * b.x + a.y * b.y;
+}
+template <class T> T Cross(const Point2D<T>& a, const Point2D<T>& b) {
+  return a.x * b.y - a.y * b.x;
+}
+template <class T> T Cross(const Point2D<T>& o,
+    const Point2D<T>& a, const Point2D<T>& b) {
+  return Cross(a - o, b - o);
 }
 
 #endif
