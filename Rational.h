@@ -52,6 +52,17 @@ template <class T, class Lowbit = DefaultLowbit<T>> class Rational {
     return *this;
   }
   Rational operator-() const { return Rational(-num_, denom_, 0); }
+  bool operator==(const Rational& x) const {
+    return num_ == x.num_ && denom_ == x.denom_;
+  }
+  bool operator!=(const Rational& x) const { return !operator==(x); }
+  bool operator<(const Rational& x) const {
+    T gcd = Gcd(denom_, x.denom_, ctz_);
+    return x.denom_ / gcd * num_ < denom_ / gcd * x.num_;
+  }
+  bool operator>(const Rational& x) const { return x.operator<(*this); }
+  bool operator<=(const Rational& x) const { return !x.operator<(*this); }
+  bool operator>=(const Rational& x) const { return !operator<(x); }
   const T& Num() const { return num_; }
   const T& Den() const { return denom_; }
 };
@@ -110,6 +121,16 @@ template <class T, class Lowbit = DefaultLowbit<T>> class FastRational {
     return *this;
   }
   FastRational operator-() const { return FastRational(-num_, denom_, 0); }
+  bool operator==(const FastRational& x) const {
+    return num_ == x.num_ && denom_ == x.denom_;
+  }
+  bool operator!=(const FastRational& x) const { return !operator==(x); }
+  bool operator<(const FastRational& x) const {
+    return num_ * x.denom_ < denom_ * x.num_;
+  }
+  bool operator>(const FastRational& x) const { return x.operator<(*this); }
+  bool operator<=(const FastRational& x) const { return !x.operator<(*this); }
+  bool operator>=(const FastRational& x) const { return !operator<(x); }
   const T& Num() const { return num_; }
   const T& Den() const { return denom_; }
 };
