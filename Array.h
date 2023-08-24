@@ -23,7 +23,7 @@ template <class T> class Array {
     }
   }
   template <class... Args> void Construct(size_type x, Args&&... args) {
-    new(arr_ + x) value_type(args...);
+    new(arr_ + x) value_type(std::forward<Args>(args)...);
   }
   void Destruct(size_type x) { (arr_ + x)->~value_type(); }
   void DestructAll() { for (size_type i = 0; i < sz_; i++) Destruct(i); }
@@ -164,7 +164,7 @@ template <class T> class Array {
   void clear() { DestructAll(); sz_ = 0; }
   template <class... Args> void emplace_back(Args&&... args) {
     CheckRealloc_(++sz_);
-    Construct(sz_ - 1, args...);
+    Construct(sz_ - 1, std::forward<Args>(args)...);
   }
 
   bool operator==(const Array& x) const {
